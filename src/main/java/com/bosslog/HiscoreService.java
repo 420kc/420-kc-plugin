@@ -30,6 +30,7 @@ public class HiscoreService
     // Boss names in the order they appear in hiscores (after skills + activities)
     // Jagex hiscores: 24 skills, then activities, then bosses starting at index 48
     private static final int BOSS_START_INDEX = 48;
+    // Boss names in hiscore CSV order — must match Jagex's exact order
     private static final String[] BOSS_NAMES = {
         "Abyssal Sire", "Alchemical Hydra", "Amoxliatl", "Araxxor",
         "Artio", "Barrows Chests", "Bryophyta", "Callisto",
@@ -37,19 +38,19 @@ public class HiscoreService
         "Chambers of Xeric: Challenge Mode", "Chaos Elemental", "Chaos Fanatic",
         "Commander Zilyana", "Corporeal Beast", "Crazy Archaeologist",
         "Dagannoth Prime", "Dagannoth Rex", "Dagannoth Supreme",
-        "Deranged Archaeologist", "Duke Sucellus", "General Graardor",
-        "Giant Mole", "Grotesque Guardians", "Hespori", "Hueycoatl",
-        "K'ril Tsutsaroth", "Kalphite Queen", "King Black Dragon",
-        "Kraken", "Kree'Arra", "Lunar Chests", "Nex",
+        "Deranged Archaeologist", "Doom of Mokhaiotl", "Duke Sucellus",
+        "General Graardor", "Giant Mole", "Grotesque Guardians", "Hespori",
+        "Hueycoatl", "K'ril Tsutsaroth", "Kalphite Queen", "King Black Dragon",
+        "Kraken", "Kree'Arra", "Lunar Chests", "Mimic", "Nex",
         "Nightmare", "Phosani's Nightmare", "Obor",
         "Phantom Muspah", "Royal Titans", "Sarachnis", "Scorpia", "Scurrius",
-        "Skotizo", "Sol Heredit", "Spindel", "Tempoross",
+        "Shellbane Gryphon", "Skotizo", "Sol Heredit", "Spindel", "Tempoross",
         "The Gauntlet", "The Corrupted Gauntlet", "The Leviathan",
         "The Whisperer", "Theatre of Blood",
         "Theatre of Blood: Hard Mode", "Thermonuclear Smoke Devil",
         "Tombs of Amascut", "Tombs of Amascut: Expert Mode",
         "TzKal-Zuk", "TzTok-Jad", "Vardorvis", "Venenatis",
-        "Vet'ion", "Vorkath", "Wintertodt", "Zalcano",
+        "Vet'ion", "Vorkath", "Wintertodt", "Yama", "Zalcano",
         "Zulrah"
     };
 
