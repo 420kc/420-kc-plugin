@@ -182,13 +182,6 @@ public class BossLogPlugin extends Plugin
 
     private BufferedImage getIcon()
     {
-        try
-        {
-            return ImageUtil.loadImageResource(getClass(), "/net/runelite/client/plugins/hiscore/normal.png");
-        }
-        catch (Exception e)
-        {
-            return new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
-        }
+        return ImageUtil.loadImageResource(getClass(), "icon.png");
     }
 }
