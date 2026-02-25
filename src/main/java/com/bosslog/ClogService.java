@@ -10,13 +10,16 @@ import java.lang.reflect.Type;
 import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.client.game.ItemManager;
 import okhttp3.Call;
 import okhttp3.Callback;
 import okhttp3.OkHttpClient;
@@ -36,8 +39,6 @@ public class ClogService
         "https://templeosrs.com/api/collection-log/categories.php";
     private static final String TEMPLE_PLAYER_URL =
         "https://templeosrs.com/api/collection-log/player_collection_log.php";
-    private static final String WIKI_MAPPING_URL =
-        "https://prices.runescape.wiki/api/v1/osrs/mapping";
 
     private static final Gson GSON = new Gson();
 
@@ -80,15 +81,16 @@ public class ClogService
     }
 
     private final OkHttpClient httpClient;
+    private final ItemManager itemManager;
 
     // Cached data (loaded once per session)
     private volatile Map<String, List<Integer>> cachedCategories;
-    private volatile Map<Integer, String> cachedItemNames;
 
     @Inject
-    public ClogService(OkHttpClient httpClient)
+    public ClogService(OkHttpClient httpClient, ItemManager itemManager)
     {
         this.httpClient = httpClient;
+        this.itemManager = itemManager;
     }
 
     /**
@@ -125,25 +127,56 @@ public class ClogService
             fetchPlayerClog(encoded);
         CompletableFuture<Map<String, List<Integer>>> categoriesFuture =
             fetchCategories();
-        CompletableFuture<Map<Integer, String>> namesFuture =
-            fetchItemNames();
 
-        return CompletableFuture.allOf(playerFuture, categoriesFuture, namesFuture)
+        return CompletableFuture.allOf(playerFuture, categoriesFuture)
             .thenApply(v ->
             {
                 Map<String, List<ClogResult.ClogItem>> obtained = playerFuture.join();
                 Map<String, List<Integer>> categories = categoriesFuture.join();
-                Map<Integer, String> names = namesFuture.join();
 
                 if (obtained == null)
                 {
                     return null;
                 }
 
+                // Collect all item IDs and resolve names via RuneLite's game cache
+                Set<Integer> allIds = new HashSet<>();
+                for (List<ClogResult.ClogItem> items : obtained.values())
+                {
+                    for (ClogResult.ClogItem item : items)
+                    {
+                        allIds.add(item.getId());
+                    }
+                }
+                if (categories != null)
+                {
+                    for (List<Integer> ids : categories.values())
+                    {
+                        allIds.addAll(ids);
+                    }
+                }
+
+                Map<Integer, String> names = new HashMap<>();
+                for (int id : allIds)
+                {
+                    try
+                    {
+                        String name = itemManager.getItemComposition(id).getName();
+                        if (name != null && !name.equals("null"))
+                        {
+                            names.put(id, name);
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        // Item not in cache, skip
+                    }
+                }
+
                 return new ClogResult(
                     obtained,
                     categories != null ? categories : new HashMap<>(),
-                    names != null ? names : new HashMap<>()
+                    names
                 );
             });
     }
@@ -230,47 +263,6 @@ public class ClogService
             catch (Exception e)
             {
                 log.debug("Failed to parse clog categories: {}", e.getMessage());
-                return null;
-            }
-        });
-    }
-
-    /**
-     * Fetch item ID -> name map from OSRS Wiki (cached).
-     */
-    private CompletableFuture<Map<Integer, String>> fetchItemNames()
-    {
-        if (cachedItemNames != null)
-        {
-            return CompletableFuture.completedFuture(cachedItemNames);
-        }
-
-        return httpGetAsync(WIKI_MAPPING_URL).thenApply(json ->
-        {
-            if (json == null)
-            {
-                return null;
-            }
-            try
-            {
-                JsonArray arr = GSON.fromJson(json, JsonArray.class);
-                Map<Integer, String> names = new HashMap<>();
-
-                for (JsonElement elem : arr)
-                {
-                    JsonObject obj = elem.getAsJsonObject();
-                    if (obj.has("id") && obj.has("name"))
-                    {
-                        names.put(obj.get("id").getAsInt(), obj.get("name").getAsString());
-                    }
-                }
-
-                cachedItemNames = names;
-                return names;
-            }
-            catch (Exception e)
-            {
-                log.debug("Failed to parse item names: {}", e.getMessage());
                 return null;
             }
         });

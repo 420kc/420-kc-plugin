@@ -24,6 +24,7 @@ import javax.swing.ToolTipManager;
 import javax.swing.border.EmptyBorder;
 import net.runelite.client.game.SpriteManager;
 import net.runelite.client.hiscore.HiscoreSkill;
+import net.runelite.client.plugins.hiscore.HiscorePanel;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.PluginPanel;
@@ -119,8 +120,9 @@ public class BossLogPanel extends PluginPanel
     private final BossLogConfig config;
     private final SpriteManager spriteManager;
 
+    private final JLabel accountIcon = new JLabel();
     private final JTextField playerInput = new JTextField();
-    private final JButton lookupButton = new JButton("Lookup");
+    private final JButton lookupButton = new JButton("Hit This");
     private final JLabel statusLabel = new JLabel(" ");
     private final JPanel resultsPanel = new JPanel();
 
@@ -146,9 +148,13 @@ public class BossLogPanel extends PluginPanel
 
         setLayout(new BorderLayout());
         setBackground(ColorScheme.DARK_GRAY_COLOR);
+        setBorder(null);
 
         add(buildSearchPanel(), BorderLayout.NORTH);
-        add(buildResultsScroll(), BorderLayout.CENTER);
+
+        JScrollPane scroll = buildResultsScroll();
+        scroll.setBorder(null);
+        add(scroll, BorderLayout.CENTER);
     }
 
     private JPanel buildSearchPanel()
@@ -169,6 +175,9 @@ public class BossLogPanel extends PluginPanel
         // Search row
         JPanel searchRow = new JPanel(new BorderLayout(5, 0));
         searchRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
+
+        accountIcon.setVisible(false);
+        searchRow.add(accountIcon, BorderLayout.WEST);
 
         playerInput.setToolTipText("Player name");
         playerInput.addActionListener(e -> doLookup());
@@ -269,6 +278,7 @@ public class BossLogPanel extends PluginPanel
         statusLabel.setText("Looking up " + player + "...");
         statusLabel.setForeground(TEXT_DIM);
         lookupButton.setEnabled(false);
+        accountIcon.setVisible(false);
 
         // Clear previous results
         hiscoreResult = null;
@@ -300,6 +310,7 @@ public class BossLogPanel extends PluginPanel
                     + " | Total: " + result.getTotalLevel());
                 statusLabel.setForeground(result.getAccountType().getColor());
 
+                updateAccountIcon(result.getAccountType());
                 updateBossLabels(result);
                 updateTooltips();
             })
@@ -328,6 +339,39 @@ public class BossLogPanel extends PluginPanel
                 // Clog failure is non-fatal, tooltips just won't show items
                 return null;
             });
+        }
+    }
+
+    private void updateAccountIcon(AccountType type)
+    {
+        String resource;
+        switch (type)
+        {
+            case IRONMAN:
+            case DE_IRONED:
+                resource = "ironman.png";
+                break;
+            case HARDCORE_IRONMAN:
+                resource = "hardcore_ironman.png";
+                break;
+            case ULTIMATE_IRONMAN:
+                resource = "ultimate_ironman.png";
+                break;
+            default:
+                accountIcon.setVisible(false);
+                return;
+        }
+
+        try
+        {
+            BufferedImage img = ImageUtil.loadImageResource(HiscorePanel.class, resource);
+            accountIcon.setIcon(new ImageIcon(ImageUtil.resizeImage(img, 15, 15)));
+            accountIcon.setToolTipText(type.getLabel());
+            accountIcon.setVisible(true);
+        }
+        catch (Exception e)
+        {
+            accountIcon.setVisible(false);
         }
     }
 
