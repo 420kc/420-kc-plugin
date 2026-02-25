@@ -276,6 +276,8 @@ public class BossLogPanel extends PluginPanel
         playerInput.setText(name);
     }
 
+    private volatile int lookupVersion = 0;
+
     public void doLookup()
     {
         String player = playerInput.getText().trim();
@@ -285,6 +287,7 @@ public class BossLogPanel extends PluginPanel
             return;
         }
 
+        final int thisLookup = ++lookupVersion;
         statusLabel.setText("Looking up " + player + "...");
         statusLabel.setForeground(TEXT_DIM);
         lookupButton.setEnabled(false);
@@ -306,6 +309,7 @@ public class BossLogPanel extends PluginPanel
         hiscoreService.lookup(player).thenAccept(result ->
             SwingUtilities.invokeLater(() ->
             {
+                if (thisLookup != lookupVersion) return; // stale result
                 lookupButton.setEnabled(true);
 
                 if (result == null)
@@ -341,6 +345,7 @@ public class BossLogPanel extends PluginPanel
             clogService.lookup(player).thenAccept(result ->
                 SwingUtilities.invokeLater(() ->
                 {
+                    if (thisLookup != lookupVersion) return; // stale result
                     clogResult = result;
                     updateTooltips();
                     // Resolve untradeable item names via game cache on client thread

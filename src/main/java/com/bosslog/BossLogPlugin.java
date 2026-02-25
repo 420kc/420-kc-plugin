@@ -23,6 +23,7 @@ import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.util.ImageUtil;
 import net.runelite.client.util.Text;
+import javax.swing.SwingUtilities;
 
 @Slf4j
 @PluginDescriptor(
@@ -71,8 +72,11 @@ public class BossLogPlugin extends Plugin
         String defaultPlayer = config.defaultPlayer();
         if (!defaultPlayer.isEmpty())
         {
-            panel.setPlayerName(defaultPlayer);
-            panel.doLookup();
+            SwingUtilities.invokeLater(() ->
+            {
+                panel.setPlayerName(defaultPlayer);
+                panel.doLookup();
+            });
         }
 
         log.info("420 kc plugin started");
@@ -95,7 +99,8 @@ public class BossLogPlugin extends Plugin
                 Player local = client.getLocalPlayer();
                 if (local != null && local.getName() != null)
                 {
-                    panel.setPlayerName(local.getName());
+                    String name = local.getName();
+                    SwingUtilities.invokeLater(() -> panel.setPlayerName(name));
                 }
             }
         }
@@ -141,11 +146,11 @@ public class BossLogPlugin extends Plugin
             .setOption("<col=00ff00>420 kc</col> Lookup")
             .setTarget("<col=ffffff>" + playerName + "</col>")
             .setType(MenuAction.RUNELITE)
-            .onClick(e ->
+            .onClick(e -> SwingUtilities.invokeLater(() ->
             {
                 panel.setPlayerName(playerName);
                 panel.doLookup();
-            });
+            }));
     }
 
     /**
