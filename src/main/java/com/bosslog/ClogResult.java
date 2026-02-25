@@ -1,5 +1,6 @@
 package com.bosslog;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -35,14 +36,19 @@ public class ClogResult
         return categoryItems;
     }
 
-    public Map<Integer, String> getItemNames()
-    {
-        return itemNames;
-    }
-
     public String getItemName(int id)
     {
         return itemNames.getOrDefault(id, "Item #" + id);
+    }
+
+    public boolean hasItemName(int id)
+    {
+        return itemNames.containsKey(id);
+    }
+
+    public void putItemName(int id, String name)
+    {
+        itemNames.put(id, name);
     }
 
     public static class ClogItem

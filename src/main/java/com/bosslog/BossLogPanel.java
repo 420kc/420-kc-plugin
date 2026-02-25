@@ -5,6 +5,7 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.GridLayout;
 import java.awt.image.BufferedImage;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -22,8 +23,11 @@ import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import javax.swing.ToolTipManager;
 import javax.swing.border.EmptyBorder;
+import net.runelite.client.callback.ClientThread;
+import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.SpriteManager;
 import net.runelite.client.hiscore.HiscoreSkill;
+import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.plugins.hiscore.HiscorePanel;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
@@ -31,6 +35,7 @@ import net.runelite.client.ui.PluginPanel;
 import net.runelite.client.util.ImageUtil;
 import org.apache.commons.lang3.StringUtils;
 
+@Slf4j
 public class BossLogPanel extends PluginPanel
 {
     private static final Color GOLD = new Color(76, 175, 110);
@@ -119,6 +124,8 @@ public class BossLogPanel extends PluginPanel
     private final ClogService clogService;
     private final BossLogConfig config;
     private final SpriteManager spriteManager;
+    private final ItemManager itemManager;
+    private final ClientThread clientThread;
 
     private final JLabel accountIcon = new JLabel();
     private final JTextField playerInput = new JTextField();
@@ -135,13 +142,16 @@ public class BossLogPanel extends PluginPanel
 
     @Inject
     public BossLogPanel(HiscoreService hiscoreService, ClogService clogService,
-                        BossLogConfig config, SpriteManager spriteManager)
+                        BossLogConfig config, SpriteManager spriteManager,
+                        ItemManager itemManager, ClientThread clientThread)
     {
         super(false);
         this.hiscoreService = hiscoreService;
         this.clogService = clogService;
         this.config = config;
         this.spriteManager = spriteManager;
+        this.itemManager = itemManager;
+        this.clientThread = clientThread;
 
         // Keep tooltips visible longer for reading item lists
         ToolTipManager.sharedInstance().setDismissDelay(15000);
@@ -333,10 +343,15 @@ public class BossLogPanel extends PluginPanel
                 {
                     clogResult = result;
                     updateTooltips();
+                    // Resolve untradeable item names via game cache on client thread
+                    if (result != null)
+                    {
+                        resolveUntradeableNames(result);
+                    }
                 })
             ).exceptionally(ex ->
             {
-                // Clog failure is non-fatal, tooltips just won't show items
+                log.warn("Clog lookup failed", ex);
                 return null;
             });
         }
@@ -373,6 +388,65 @@ public class BossLogPanel extends PluginPanel
         {
             accountIcon.setVisible(false);
         }
+    }
+
+    /**
+     * Resolve item names missing from the Wiki API (untradeables like pets, jars)
+     * by looking them up via ItemManager on the client thread.
+     */
+    private void resolveUntradeableNames(ClogResult result)
+    {
+        // Collect all item IDs that need names
+        Set<Integer> allIds = new HashSet<>();
+        for (List<ClogResult.ClogItem> items : result.getObtainedItems().values())
+        {
+            for (ClogResult.ClogItem item : items)
+            {
+                allIds.add(item.getId());
+            }
+        }
+        for (List<Integer> ids : result.getCategoryItems().values())
+        {
+            allIds.addAll(ids);
+        }
+
+        // Find IDs missing from Wiki data
+        List<Integer> missing = new ArrayList<>();
+        for (int id : allIds)
+        {
+            if (!result.hasItemName(id))
+            {
+                missing.add(id);
+            }
+        }
+
+        if (missing.isEmpty())
+        {
+            return;
+        }
+
+        log.debug("Resolving {} untradeable item names via game cache", missing.size());
+
+        // Resolve on client thread, then refresh tooltips on EDT
+        clientThread.invokeLater(() ->
+        {
+            for (int id : missing)
+            {
+                try
+                {
+                    String name = itemManager.getItemComposition(id).getName();
+                    if (name != null && !name.isEmpty() && !name.equals("null") && !name.equals("Null"))
+                    {
+                        result.putItemName(id, name);
+                    }
+                }
+                catch (Exception e)
+                {
+                    // Item not in cache, skip
+                }
+            }
+            SwingUtilities.invokeLater(this::updateTooltips);
+        });
     }
 
     private void updateBossLabels(HiscoreResult result)
@@ -415,6 +489,18 @@ public class BossLogPanel extends PluginPanel
      * Otherwise falls back to simple "Boss Name - X kc" format.
      */
     private void updateTooltips()
+    {
+        try
+        {
+            updateTooltipsInner();
+        }
+        catch (Exception e)
+        {
+            log.warn("Failed to update tooltips", e);
+        }
+    }
+
+    private void updateTooltipsInner()
     {
         for (Map.Entry<HiscoreSkill, JLabel> entry : bossLabels.entrySet())
         {
