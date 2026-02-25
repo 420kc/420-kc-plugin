@@ -1,18 +1,19 @@
 package com.bosslog;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import java.io.IOException;
 import java.net.URLEncoder;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 
 /**
  * Parallelized hiscore lookup with account type detection.
@@ -28,9 +29,9 @@ public class HiscoreService
     private static final String SUFFIX = "/index_lite.ws?player=";
 
     // Boss names in the order they appear in hiscores (after skills + activities)
-    // Jagex hiscores: 24 skills, then activities, then bosses starting at index 48
-    private static final int BOSS_START_INDEX = 48;
-    // Boss names in hiscore CSV order — must match Jagex's exact order
+    // 25 skills + 20 minigames/activities = bosses start at index 45
+    private static final int BOSS_START_INDEX = 45;
+    // Boss names in hiscore CSV order — must match Jagex's exact order (same as proxy.js)
     private static final String[] BOSS_NAMES = {
         "Abyssal Sire", "Alchemical Hydra", "Amoxliatl", "Araxxor",
         "Artio", "Barrows Chests", "Bryophyta", "Callisto",
@@ -40,25 +41,26 @@ public class HiscoreService
         "Dagannoth Prime", "Dagannoth Rex", "Dagannoth Supreme",
         "Deranged Archaeologist", "Doom of Mokhaiotl", "Duke Sucellus",
         "General Graardor", "Giant Mole", "Grotesque Guardians", "Hespori",
-        "Hueycoatl", "K'ril Tsutsaroth", "Kalphite Queen", "King Black Dragon",
-        "Kraken", "Kree'Arra", "Lunar Chests", "Mimic", "Nex",
+        "Kalphite Queen", "King Black Dragon", "Kraken", "Kree'Arra",
+        "K'ril Tsutsaroth", "Lunar Chests", "Mimic", "Nex",
         "Nightmare", "Phosani's Nightmare", "Obor",
-        "Phantom Muspah", "Royal Titans", "Sarachnis", "Scorpia", "Scurrius",
+        "Phantom Muspah", "Sarachnis", "Scorpia", "Scurrius",
         "Shellbane Gryphon", "Skotizo", "Sol Heredit", "Spindel", "Tempoross",
-        "The Gauntlet", "The Corrupted Gauntlet", "The Leviathan",
-        "The Whisperer", "Theatre of Blood",
-        "Theatre of Blood: Hard Mode", "Thermonuclear Smoke Devil",
-        "Tombs of Amascut", "Tombs of Amascut: Expert Mode",
-        "TzKal-Zuk", "TzTok-Jad", "Vardorvis", "Venenatis",
-        "Vet'ion", "Vorkath", "Wintertodt", "Yama", "Zalcano",
-        "Zulrah"
+        "The Gauntlet", "The Corrupted Gauntlet", "The Hueycoatl",
+        "The Leviathan", "The Royal Titans", "The Whisperer",
+        "Theatre of Blood", "Theatre of Blood: Hard Mode",
+        "Thermonuclear Smoke Devil", "Tombs of Amascut",
+        "Tombs of Amascut: Expert Mode", "TzKal-Zuk", "TzTok-Jad",
+        "Vardorvis", "Venenatis", "Vet'ion", "Vorkath", "Wintertodt",
+        "Yama", "Zalcano", "Zulrah"
     };
 
-    private final ExecutorService executor = Executors.newFixedThreadPool(4);
+    private final OkHttpClient httpClient;
 
     @Inject
-    public HiscoreService()
+    public HiscoreService(OkHttpClient httpClient)
     {
+        this.httpClient = httpClient;
     }
 
     /**
@@ -106,11 +108,6 @@ public class HiscoreService
 
     /**
      * Detect account type from parallel hiscore responses.
-     * Same algorithm as the 420kc.live proxy:
-     * - If UIM endpoint returns data with matching XP -> UIM
-     * - If HCIM endpoint returns data with matching XP -> HCIM
-     * - If Iron endpoint returns data but not UIM/HCIM -> Ironman
-     * - Otherwise -> Regular
      */
     private AccountType detectAccountType(String uimBody, String hcimBody, String ironBody, String regBody)
     {
@@ -213,38 +210,42 @@ public class HiscoreService
 
     private CompletableFuture<String> fetchAsync(String hiscoreKey, String encodedPlayer)
     {
-        return CompletableFuture.supplyAsync(() ->
+        CompletableFuture<String> future = new CompletableFuture<>();
+
+        Request request = new Request.Builder()
+            .url(BASE_URL + hiscoreKey + SUFFIX + encodedPlayer)
+            .header("User-Agent", "420kc-RuneLite-Plugin/1.0")
+            .build();
+
+        httpClient.newCall(request).enqueue(new Callback()
         {
-            try
-            {
-                URL url = new URL(BASE_URL + hiscoreKey + SUFFIX + encodedPlayer);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("GET");
-                conn.setConnectTimeout(5000);
-                conn.setReadTimeout(5000);
-                conn.setRequestProperty("User-Agent", "RuneLite Boss Log Plugin");
-
-                int status = conn.getResponseCode();
-                if (status != 200)
-                {
-                    return null;
-                }
-
-                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                StringBuilder sb = new StringBuilder();
-                String line;
-                while ((line = reader.readLine()) != null)
-                {
-                    sb.append(line).append("\n");
-                }
-                reader.close();
-                return sb.toString();
-            }
-            catch (Exception e)
+            @Override
+            public void onFailure(Call call, IOException e)
             {
                 log.debug("Hiscore fetch failed for {}: {}", hiscoreKey, e.getMessage());
-                return null;
+                future.complete(null);
             }
-        }, executor);
+
+            @Override
+            public void onResponse(Call call, Response response)
+            {
+                try (ResponseBody body = response.body())
+                {
+                    if (!response.isSuccessful() || body == null)
+                    {
+                        future.complete(null);
+                        return;
+                    }
+                    future.complete(body.string());
+                }
+                catch (IOException e)
+                {
+                    log.debug("Failed to read hiscore response for {}: {}", hiscoreKey, e.getMessage());
+                    future.complete(null);
+                }
+            }
+        });
+
+        return future;
     }
 }

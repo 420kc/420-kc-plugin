@@ -5,10 +5,12 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.GridLayout;
 import java.awt.image.BufferedImage;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import javax.inject.Inject;
-import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.ImageIcon;
@@ -17,12 +19,11 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextField;
-import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.ToolTipManager;
 import javax.swing.border.EmptyBorder;
 import net.runelite.client.game.SpriteManager;
 import net.runelite.client.hiscore.HiscoreSkill;
-import net.runelite.client.hiscore.HiscoreSkillType;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.PluginPanel;
@@ -106,20 +107,16 @@ public class BossLogPanel extends PluginPanel
         HiscoreSkill.ZULRAH,
     };
 
-    // Map HiscoreSkill name -> boss name as it appears in hiscore CSV data
-    // Most names match, these handle the mismatches
+    // Map HiscoreSkill.getName() -> boss name as it appears in hiscore CSV data
     private static final Map<String, String> NAME_OVERRIDES = new LinkedHashMap<>();
     static
     {
         NAME_OVERRIDES.put("Calvar'ion", "Cal'varion");
-        NAME_OVERRIDES.put("The Hueycoatl", "Hueycoatl");
-        NAME_OVERRIDES.put("The Royal Titans", "Royal Titans");
-        NAME_OVERRIDES.put("Doom of Mokhaiotl", "Doom of Mokhaiotl");
-        NAME_OVERRIDES.put("Shellbane Gryphon", "Shellbane Gryphon");
-        NAME_OVERRIDES.put("Yama", "Yama");
     }
 
     private final HiscoreService hiscoreService;
+    private final ClogService clogService;
+    private final BossLogConfig config;
     private final SpriteManager spriteManager;
 
     private final JTextField playerInput = new JTextField();
@@ -130,12 +127,22 @@ public class BossLogPanel extends PluginPanel
     // Track labels for updating after lookup
     private final Map<HiscoreSkill, JLabel> bossLabels = new LinkedHashMap<>();
 
+    // Current lookup state
+    private HiscoreResult hiscoreResult;
+    private ClogResult clogResult;
+
     @Inject
-    public BossLogPanel(HiscoreService hiscoreService, SpriteManager spriteManager)
+    public BossLogPanel(HiscoreService hiscoreService, ClogService clogService,
+                        BossLogConfig config, SpriteManager spriteManager)
     {
         super(false);
         this.hiscoreService = hiscoreService;
+        this.clogService = clogService;
+        this.config = config;
         this.spriteManager = spriteManager;
+
+        // Keep tooltips visible longer for reading item lists
+        ToolTipManager.sharedInstance().setDismissDelay(15000);
 
         setLayout(new BorderLayout());
         setBackground(ColorScheme.DARK_GRAY_COLOR);
@@ -263,13 +270,19 @@ public class BossLogPanel extends PluginPanel
         statusLabel.setForeground(TEXT_DIM);
         lookupButton.setEnabled(false);
 
+        // Clear previous results
+        hiscoreResult = null;
+        clogResult = null;
+
         // Reset all labels to "--"
         for (JLabel label : bossLabels.values())
         {
             label.setText(pad("--"));
             label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+            label.setToolTipText(null);
         }
 
+        // Fire hiscore lookup
         hiscoreService.lookup(player).thenAccept(result ->
             SwingUtilities.invokeLater(() ->
             {
@@ -281,11 +294,14 @@ public class BossLogPanel extends PluginPanel
                     return;
                 }
 
+                hiscoreResult = result;
+
                 statusLabel.setText(result.getAccountType().getLabel()
                     + " | Total: " + result.getTotalLevel());
                 statusLabel.setForeground(result.getAccountType().getColor());
 
                 updateBossLabels(result);
+                updateTooltips();
             })
         ).exceptionally(ex ->
         {
@@ -297,6 +313,22 @@ public class BossLogPanel extends PluginPanel
             });
             return null;
         });
+
+        // Fire clog lookup in parallel (if enabled)
+        if (config.showCollectionLog())
+        {
+            clogService.lookup(player).thenAccept(result ->
+                SwingUtilities.invokeLater(() ->
+                {
+                    clogResult = result;
+                    updateTooltips();
+                })
+            ).exceptionally(ex ->
+            {
+                // Clog failure is non-fatal, tooltips just won't show items
+                return null;
+            });
+        }
     }
 
     private void updateBossLabels(HiscoreResult result)
@@ -330,14 +362,164 @@ public class BossLogPanel extends PluginPanel
             {
                 label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
             }
-
-            // Update tooltip with KC
-            String tooltip = skill.getName();
-            if (hasKc)
-            {
-                tooltip += " — " + kc + " kc";
-            }
-            label.setToolTipText(tooltip);
         }
+    }
+
+    /**
+     * Build HTML tooltips for each boss cell.
+     * If clog data is available, shows obtained/missing items.
+     * Otherwise falls back to simple "Boss Name - X kc" format.
+     */
+    private void updateTooltips()
+    {
+        for (Map.Entry<HiscoreSkill, JLabel> entry : bossLabels.entrySet())
+        {
+            HiscoreSkill skill = entry.getKey();
+            JLabel label = entry.getValue();
+
+            String bossName = skill.getName();
+            String hiscoreName = NAME_OVERRIDES.getOrDefault(bossName, bossName);
+
+            // Get KC from hiscore result
+            int kc = -1;
+            if (hiscoreResult != null)
+            {
+                kc = hiscoreResult.getKc(hiscoreName);
+            }
+
+            // If no clog data or config disabled, show simple tooltip
+            if (clogResult == null || !config.showCollectionLog())
+            {
+                String tooltip = bossName;
+                if (kc > 0)
+                {
+                    tooltip += " \u2014 " + kc + " kc";
+                }
+                label.setToolTipText(tooltip);
+                continue;
+            }
+
+            // Build rich HTML tooltip with collection log items
+            String category = ClogService.bossToCategory(hiscoreName);
+
+            List<ClogResult.ClogItem> obtained = clogResult.getObtainedItems().get(category);
+            List<Integer> allItems = clogResult.getCategoryItems().get(category);
+
+            // No clog data for this boss
+            if ((obtained == null || obtained.isEmpty()) && (allItems == null || allItems.isEmpty()))
+            {
+                String tooltip = bossName;
+                if (kc > 0)
+                {
+                    tooltip += " \u2014 " + kc + " kc";
+                }
+                label.setToolTipText(tooltip);
+                continue;
+            }
+
+            // Build obtained ID set for quick lookup
+            Set<Integer> obtainedIds = new HashSet<>();
+            Map<Integer, Integer> obtainedCounts = new LinkedHashMap<>();
+            if (obtained != null)
+            {
+                for (ClogResult.ClogItem item : obtained)
+                {
+                    obtainedIds.add(item.getId());
+                    obtainedCounts.put(item.getId(), item.getCount());
+                }
+            }
+
+            int totalItems = allItems != null ? allItems.size() : obtainedIds.size();
+            int obtainedCount = 0;
+
+            // Count obtained from the full item list
+            if (allItems != null)
+            {
+                for (int itemId : allItems)
+                {
+                    if (obtainedIds.contains(itemId))
+                    {
+                        obtainedCount++;
+                    }
+                }
+            }
+            else
+            {
+                obtainedCount = obtainedIds.size();
+            }
+
+            boolean isComplete = totalItems > 0 && obtainedCount == totalItems;
+
+            StringBuilder html = new StringBuilder();
+            html.append("<html><body style='padding:4px;'>");
+
+            // Header: Boss Name (obtained/total)
+            String headerColor = isComplete ? "#4caf6e" : "#ffffff";
+            html.append("<b style='color:").append(headerColor).append(";'>");
+            html.append(escapeHtml(bossName));
+            html.append(" (").append(obtainedCount).append("/").append(totalItems).append(")");
+            html.append("</b>");
+
+            if (kc > 0)
+            {
+                html.append("<span style='color:#a0c8a0;'> \u2014 ").append(kc).append(" kc</span>");
+            }
+
+            html.append("<br>");
+
+            // Item list
+            if (allItems != null)
+            {
+                for (int itemId : allItems)
+                {
+                    boolean hasItem = obtainedIds.contains(itemId);
+                    String itemName = clogResult.getItemName(itemId);
+
+                    if (hasItem)
+                    {
+                        int count = obtainedCounts.getOrDefault(itemId, 1);
+                        html.append("<span style='color:#4caf6e;'>\u2713 ");
+                        html.append(escapeHtml(itemName));
+                        if (count > 1)
+                        {
+                            html.append(" (x").append(count).append(")");
+                        }
+                        html.append("</span><br>");
+                    }
+                    else
+                    {
+                        html.append("<span style='color:#ff6666;'>\u2717 ");
+                        html.append(escapeHtml(itemName));
+                        html.append("</span><br>");
+                    }
+                }
+            }
+            else if (obtained != null)
+            {
+                // No category data, just show obtained items
+                for (ClogResult.ClogItem item : obtained)
+                {
+                    String itemName = clogResult.getItemName(item.getId());
+                    html.append("<span style='color:#4caf6e;'>\u2713 ");
+                    html.append(escapeHtml(itemName));
+                    if (item.getCount() > 1)
+                    {
+                        html.append(" (x").append(item.getCount()).append(")");
+                    }
+                    html.append("</span><br>");
+                }
+            }
+
+            html.append("</body></html>");
+            label.setToolTipText(html.toString());
+        }
+    }
+
+    private static String escapeHtml(String text)
+    {
+        return text.replace("&", "&amp;")
+                   .replace("<", "&lt;")
+                   .replace(">", "&gt;")
+                   .replace("\"", "&quot;");
     }
 }

@@ -26,4 +26,14 @@ public interface BossLogConfig extends Config
     {
         return true;
     }
+
+    @ConfigItem(
+        keyName = "showCollectionLog",
+        name = "Show Collection Log",
+        description = "Fetch collection log from TempleOSRS and show in tooltips"
+    )
+    default boolean showCollectionLog()
+    {
+        return true;
+    }
 }

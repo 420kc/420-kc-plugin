@@ -1,0 +1,69 @@
+package com.bosslog;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Parsed collection log data for a player from TempleOSRS.
+ */
+public class ClogResult
+{
+    /** category key -> list of obtained items with counts */
+    private final Map<String, List<ClogItem>> obtainedItems;
+    /** category key -> all item IDs in that category */
+    private final Map<String, List<Integer>> categoryItems;
+    /** item ID -> display name */
+    private final Map<Integer, String> itemNames;
+
+    public ClogResult(
+        Map<String, List<ClogItem>> obtainedItems,
+        Map<String, List<Integer>> categoryItems,
+        Map<Integer, String> itemNames)
+    {
+        this.obtainedItems = obtainedItems;
+        this.categoryItems = categoryItems;
+        this.itemNames = itemNames;
+    }
+
+    public Map<String, List<ClogItem>> getObtainedItems()
+    {
+        return obtainedItems;
+    }
+
+    public Map<String, List<Integer>> getCategoryItems()
+    {
+        return categoryItems;
+    }
+
+    public Map<Integer, String> getItemNames()
+    {
+        return itemNames;
+    }
+
+    public String getItemName(int id)
+    {
+        return itemNames.getOrDefault(id, "Item #" + id);
+    }
+
+    public static class ClogItem
+    {
+        private final int id;
+        private final int count;
+
+        public ClogItem(int id, int count)
+        {
+            this.id = id;
+            this.count = count;
+        }
+
+        public int getId()
+        {
+            return id;
+        }
+
+        public int getCount()
+        {
+            return count;
+        }
+    }
+}
