@@ -134,7 +134,7 @@ public class BossLogPanel extends PluginPanel
 
     private final JLabel accountIcon = new JLabel();
     private final JTextField playerInput = new JTextField();
-    private final JButton lookupButton = new JButton("Hit This");
+    private final JButton lookupButton = new JButton("\uD83D\uDD0D");
     private final JButton toggleButton = new JButton();
     private final JLabel statusLabel = new JLabel(" ");
     private final JPanel resultsPanel = new JPanel();
@@ -210,22 +210,38 @@ public class BossLogPanel extends PluginPanel
         playerInput.setForeground(Color.WHITE);
         playerInput.setCaretColor(Color.WHITE);
         playerInput.setBorder(BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR));
+        playerInput.setPreferredSize(new java.awt.Dimension(0, 30));
         playerInput.addActionListener(e -> doLookup());
         searchRow.add(playerInput, BorderLayout.CENTER);
 
+        lookupButton.setBackground(Color.BLACK);
+        lookupButton.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+        lookupButton.setBorder(BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR, 2));
+        lookupButton.setFocusPainted(false);
+        lookupButton.setPreferredSize(new java.awt.Dimension(30, 30));
         lookupButton.addActionListener(e -> doLookup());
         searchRow.add(lookupButton, BorderLayout.EAST);
 
         panel.add(searchRow);
         panel.add(Box.createVerticalStrut(4));
 
-        // 420 mode toggle button
+        // Button row: 420 toggle centered
+        JPanel buttonRow = new JPanel();
+        buttonRow.setLayout(new BoxLayout(buttonRow, BoxLayout.X_AXIS));
+        buttonRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
+
+        // 420 mode toggle — square button, centered
         updateToggleButton();
-        toggleButton.setFont(FontManager.getRunescapeSmallFont());
+        toggleButton.setFont(FontManager.getRunescapeBoldFont());
         toggleButton.setFocusPainted(false);
-        toggleButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+        toggleButton.setPreferredSize(new java.awt.Dimension(40, 30));
+        toggleButton.setMaximumSize(new java.awt.Dimension(40, 30));
         toggleButton.addActionListener(e -> cycle420Mode());
-        panel.add(toggleButton);
+        buttonRow.add(Box.createHorizontalGlue());
+        buttonRow.add(toggleButton);
+        buttonRow.add(Box.createHorizontalGlue());
+
+        panel.add(buttonRow);
         panel.add(Box.createVerticalStrut(4));
 
         // Status
@@ -264,17 +280,32 @@ public class BossLogPanel extends PluginPanel
     private void updateToggleButton()
     {
         BossLogConfig.FourTwentyMode mode = config.fourTwentyMode();
-        toggleButton.setText("420: " + mode.name());
-        if (mode == BossLogConfig.FourTwentyMode.OFF)
+        toggleButton.setText(mode == BossLogConfig.FourTwentyMode.CAP ? "CAP" : "420");
+        toggleButton.setBackground(Color.BLACK);
+        switch (mode)
         {
-            toggleButton.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
-            toggleButton.setBorder(BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR));
+            case OFF:
+                toggleButton.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+                toggleButton.setBorder(BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR, 2));
+                break;
+            case ON:
+                toggleButton.setForeground(GOLD);
+                toggleButton.setBorder(BorderFactory.createLineBorder(Color.WHITE, 2));
+                break;
+            case CAP:
+                toggleButton.setForeground(GOLD);
+                toggleButton.setBorder(BorderFactory.createLineBorder(GOLD, 2));
+                break;
         }
-        else
-        {
-            toggleButton.setForeground(GOLD);
-            toggleButton.setBorder(BorderFactory.createLineBorder(GOLD));
-        }
+
+        // Tooltip showing all 3 modes with active one highlighted
+        String tipOff = mode == BossLogConfig.FourTwentyMode.OFF
+            ? "<b style='color:#4caf6e;'>\u25cf OFF</b>" : "<span style='color:#888;'>\u25cb OFF</span>";
+        String tipOn = mode == BossLogConfig.FourTwentyMode.ON
+            ? "<b style='color:#4caf6e;'>\u25cf ON</b>" : "<span style='color:#888;'>\u25cb ON</span>";
+        String tipCap = mode == BossLogConfig.FourTwentyMode.CAP
+            ? "<b style='color:#4caf6e;'>\u25cf CAP</b>" : "<span style='color:#888;'>\u25cb CAP</span>";
+        toggleButton.setToolTipText("<html>" + tipOff + "<br>" + tipOn + "<br>" + tipCap + "</html>");
     }
 
     private JScrollPane buildResultsScroll()
