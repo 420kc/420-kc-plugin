@@ -34,7 +34,7 @@ public class HiscoreService
     // Boss names in hiscore CSV order — must match Jagex's exact order (same as proxy.js)
     private static final String[] BOSS_NAMES = {
         "Abyssal Sire", "Alchemical Hydra", "Amoxliatl", "Araxxor",
-        "Artio", "Barrows Chests", "Bryophyta", "Callisto",
+        "Artio", "Barrows Chests", "Brutus", "Bryophyta", "Callisto",
         "Cal'varion", "Cerberus", "Chambers of Xeric",
         "Chambers of Xeric: Challenge Mode", "Chaos Elemental", "Chaos Fanatic",
         "Commander Zilyana", "Corporeal Beast", "Crazy Archaeologist",
@@ -173,6 +173,7 @@ public class HiscoreService
     {
         String[] lines = body.trim().split("\n");
         Map<String, Integer> bossKills = new LinkedHashMap<>();
+        Map<String, Integer> bossRanks = new LinkedHashMap<>();
 
         // Parse total level and XP from first line (Overall)
         int totalLevel = 0;
@@ -185,7 +186,7 @@ public class HiscoreService
         }
         catch (Exception ignored) {}
 
-        // Parse boss KCs starting at BOSS_START_INDEX
+        // Parse boss KCs and ranks starting at BOSS_START_INDEX
         for (int i = 0; i < BOSS_NAMES.length; i++)
         {
             int lineIdx = BOSS_START_INDEX + i;
@@ -196,16 +197,19 @@ public class HiscoreService
             try
             {
                 String[] parts = lines[lineIdx].split(",");
+                int rank = Integer.parseInt(parts[0]);
                 int kc = Integer.parseInt(parts[1]);
                 bossKills.put(BOSS_NAMES[i], kc);
+                bossRanks.put(BOSS_NAMES[i], rank);
             }
             catch (Exception e)
             {
                 bossKills.put(BOSS_NAMES[i], -1);
+                bossRanks.put(BOSS_NAMES[i], -1);
             }
         }
 
-        return new HiscoreResult(type, bossKills, totalLevel, totalXp);
+        return new HiscoreResult(type, bossKills, bossRanks, totalLevel, totalXp);
     }
 
     private CompletableFuture<String> fetchAsync(String hiscoreKey, String encodedPlayer)

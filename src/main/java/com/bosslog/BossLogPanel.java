@@ -1,8 +1,10 @@
 package com.bosslog;
 
+import java.awt.AlphaComposite;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
+import java.awt.Graphics2D;
 import java.awt.GridLayout;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
@@ -12,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
+import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.ImageIcon;
@@ -24,6 +27,7 @@ import javax.swing.SwingUtilities;
 import javax.swing.ToolTipManager;
 import javax.swing.border.EmptyBorder;
 import net.runelite.client.callback.ClientThread;
+import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.SpriteManager;
 import net.runelite.client.hiscore.HiscoreSkill;
@@ -123,6 +127,7 @@ public class BossLogPanel extends PluginPanel
     private final HiscoreService hiscoreService;
     private final ClogService clogService;
     private final BossLogConfig config;
+    private final ConfigManager configManager;
     private final SpriteManager spriteManager;
     private final ItemManager itemManager;
     private final ClientThread clientThread;
@@ -130,11 +135,15 @@ public class BossLogPanel extends PluginPanel
     private final JLabel accountIcon = new JLabel();
     private final JTextField playerInput = new JTextField();
     private final JButton lookupButton = new JButton("Hit This");
+    private final JButton toggleButton = new JButton();
     private final JLabel statusLabel = new JLabel(" ");
     private final JPanel resultsPanel = new JPanel();
 
     // Track labels for updating after lookup
     private final Map<HiscoreSkill, JLabel> bossLabels = new LinkedHashMap<>();
+
+    // Store original icons for dimming/restoring
+    private final Map<HiscoreSkill, ImageIcon> originalIcons = new LinkedHashMap<>();
 
     // Current lookup state
     private HiscoreResult hiscoreResult;
@@ -142,13 +151,15 @@ public class BossLogPanel extends PluginPanel
 
     @Inject
     public BossLogPanel(HiscoreService hiscoreService, ClogService clogService,
-                        BossLogConfig config, SpriteManager spriteManager,
+                        BossLogConfig config, ConfigManager configManager,
+                        SpriteManager spriteManager,
                         ItemManager itemManager, ClientThread clientThread)
     {
         super(false);
         this.hiscoreService = hiscoreService;
         this.clogService = clogService;
         this.config = config;
+        this.configManager = configManager;
         this.spriteManager = spriteManager;
         this.itemManager = itemManager;
         this.clientThread = clientThread;
@@ -189,7 +200,12 @@ public class BossLogPanel extends PluginPanel
         accountIcon.setVisible(false);
         searchRow.add(accountIcon, BorderLayout.WEST);
 
+        // Dark search bar
         playerInput.setToolTipText("Player name");
+        playerInput.setBackground(Color.BLACK);
+        playerInput.setForeground(Color.WHITE);
+        playerInput.setCaretColor(Color.WHITE);
+        playerInput.setBorder(BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR));
         playerInput.addActionListener(e -> doLookup());
         searchRow.add(playerInput, BorderLayout.CENTER);
 
@@ -199,6 +215,15 @@ public class BossLogPanel extends PluginPanel
         panel.add(searchRow);
         panel.add(Box.createVerticalStrut(4));
 
+        // 420 mode toggle button
+        updateToggleButton();
+        toggleButton.setFont(FontManager.getRunescapeSmallFont());
+        toggleButton.setFocusPainted(false);
+        toggleButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+        toggleButton.addActionListener(e -> cycle420Mode());
+        panel.add(toggleButton);
+        panel.add(Box.createVerticalStrut(4));
+
         // Status
         statusLabel.setFont(FontManager.getRunescapeSmallFont());
         statusLabel.setForeground(TEXT_DIM);
@@ -206,6 +231,46 @@ public class BossLogPanel extends PluginPanel
         panel.add(statusLabel);
 
         return panel;
+    }
+
+    private void cycle420Mode()
+    {
+        BossLogConfig.FourTwentyMode current = config.fourTwentyMode();
+        BossLogConfig.FourTwentyMode next;
+        switch (current)
+        {
+            case OFF:
+                next = BossLogConfig.FourTwentyMode.ON;
+                break;
+            case ON:
+                next = BossLogConfig.FourTwentyMode.CAP;
+                break;
+            default:
+                next = BossLogConfig.FourTwentyMode.OFF;
+                break;
+        }
+        configManager.setConfiguration("420kc", "fourTwentyMode", next);
+        updateToggleButton();
+        if (hiscoreResult != null)
+        {
+            updateBossLabels(hiscoreResult);
+        }
+    }
+
+    private void updateToggleButton()
+    {
+        BossLogConfig.FourTwentyMode mode = config.fourTwentyMode();
+        toggleButton.setText("420: " + mode.name());
+        if (mode == BossLogConfig.FourTwentyMode.OFF)
+        {
+            toggleButton.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+            toggleButton.setBorder(BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR));
+        }
+        else
+        {
+            toggleButton.setForeground(GOLD);
+            toggleButton.setBorder(BorderFactory.createLineBorder(GOLD));
+        }
     }
 
     private JScrollPane buildResultsScroll()
@@ -253,7 +318,9 @@ public class BossLogPanel extends PluginPanel
             {
                 BufferedImage scaled = ImageUtil.resizeImage(
                     ImageUtil.resizeCanvas(sprite, 25, 25), 20, 20);
-                label.setIcon(new ImageIcon(scaled));
+                ImageIcon icon = new ImageIcon(scaled);
+                label.setIcon(icon);
+                originalIcons.put(boss, icon);
             }));
 
         bossLabels.put(boss, label);
@@ -297,12 +364,18 @@ public class BossLogPanel extends PluginPanel
         hiscoreResult = null;
         clogResult = null;
 
-        // Reset all labels to "--"
-        for (JLabel label : bossLabels.values())
+        // Reset all labels to "--" and restore original icons
+        for (Map.Entry<HiscoreSkill, JLabel> entry : bossLabels.entrySet())
         {
+            JLabel label = entry.getValue();
             label.setText(pad("--"));
             label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
             label.setToolTipText(null);
+            ImageIcon orig = originalIcons.get(entry.getKey());
+            if (orig != null)
+            {
+                label.setIcon(orig);
+            }
         }
 
         // Fire hiscore lookup
@@ -457,6 +530,7 @@ public class BossLogPanel extends PluginPanel
     private void updateBossLabels(HiscoreResult result)
     {
         Map<String, Integer> bosses = result.getBossKills();
+        BossLogConfig.FourTwentyMode mode = config.fourTwentyMode();
 
         for (Map.Entry<HiscoreSkill, JLabel> entry : bossLabels.entrySet())
         {
@@ -468,9 +542,32 @@ public class BossLogPanel extends PluginPanel
             int kc = bosses.getOrDefault(hiscoreName, -1);
 
             boolean hasKc = kc > 0;
-            boolean is420 = hasKc && String.valueOf(kc).contains("420");
 
-            String kcText = kc <= 0 ? "--" : String.valueOf(kc);
+            // 420 mode logic
+            boolean is420;
+            switch (mode)
+            {
+                case CAP:
+                    is420 = hasKc && kc >= 420;
+                    break;
+                case ON:
+                    is420 = hasKc && kc == 420;
+                    break;
+                default:
+                    is420 = false;
+                    break;
+            }
+
+            // In CAP mode, display "420" for KC >= 420
+            String kcText;
+            if (mode == BossLogConfig.FourTwentyMode.CAP && hasKc && kc >= 420)
+            {
+                kcText = "420";
+            }
+            else
+            {
+                kcText = kc <= 0 ? "--" : String.valueOf(kc);
+            }
             label.setText(pad(kcText));
 
             if (is420)
@@ -485,7 +582,42 @@ public class BossLogPanel extends PluginPanel
             {
                 label.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
             }
+
+            // Dim icon for bosses with no KC
+            ImageIcon orig = originalIcons.get(skill);
+            if (orig != null)
+            {
+                if (!hasKc)
+                {
+                    label.setIcon(new ImageIcon(createDimmedImage(orig)));
+                }
+                else
+                {
+                    label.setIcon(orig);
+                }
+            }
         }
+    }
+
+    /**
+     * Create a dimmed version of an icon at ~30% opacity.
+     */
+    private static BufferedImage createDimmedImage(ImageIcon icon)
+    {
+        BufferedImage original = new BufferedImage(
+            icon.getIconWidth(), icon.getIconHeight(), BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = original.createGraphics();
+        icon.paintIcon(null, g, 0, 0);
+        g.dispose();
+
+        BufferedImage dimmed = new BufferedImage(
+            original.getWidth(), original.getHeight(), BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2 = dimmed.createGraphics();
+        g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.3f));
+        g2.drawImage(original, 0, 0, null);
+        g2.dispose();
+
+        return dimmed;
     }
 
     /**
@@ -505,6 +637,59 @@ public class BossLogPanel extends PluginPanel
         }
     }
 
+    /**
+     * Format a rank as colored HTML.
+     */
+    private static String formatRankHtml(int rank)
+    {
+        if (rank <= 0)
+        {
+            return "";
+        }
+
+        String color;
+        String suffix = "";
+        String rankStr = String.valueOf(rank);
+
+        // Check for 420 in rank first (overrides tier)
+        if (rankStr.contains("420"))
+        {
+            color = "#4caf6e";
+            suffix = " Blaze it!";
+        }
+        else if (rank == 1)
+        {
+            color = "#c9a84c";
+            suffix = " WOW!";
+        }
+        else if (rank <= 10)
+        {
+            color = "#e87acc";
+        }
+        else if (rank <= 25)
+        {
+            color = "#c05050";
+        }
+        else if (rank <= 50)
+        {
+            color = "#4a9ee5";
+        }
+        else if (rank <= 419)
+        {
+            color = "#4caf6e";
+        }
+        else if (rank <= 1000)
+        {
+            color = "#e8e8e8";
+        }
+        else
+        {
+            color = "#666666";
+        }
+
+        return " <span style='color:" + color + ";'>#" + rank + suffix + "</span>";
+    }
+
     private void updateTooltipsInner()
     {
         for (Map.Entry<HiscoreSkill, JLabel> entry : bossLabels.entrySet())
@@ -515,22 +700,27 @@ public class BossLogPanel extends PluginPanel
             String bossName = skill.getName();
             String hiscoreName = NAME_OVERRIDES.getOrDefault(bossName, bossName);
 
-            // Get KC from hiscore result
+            // Get KC and rank from hiscore result
             int kc = -1;
+            int rank = -1;
             if (hiscoreResult != null)
             {
                 kc = hiscoreResult.getKc(hiscoreName);
+                rank = hiscoreResult.getRank(hiscoreName);
             }
 
             // If no clog data or config disabled, show simple tooltip
             if (clogResult == null || !config.showCollectionLog())
             {
-                String tooltip = bossName;
+                StringBuilder tooltip = new StringBuilder("<html>");
+                tooltip.append(escapeHtml(bossName));
+                tooltip.append(formatRankHtml(rank));
                 if (kc > 0)
                 {
-                    tooltip += " \u2014 " + kc + " kc";
+                    tooltip.append(" \u2014 ").append(kc).append(" kc");
                 }
-                label.setToolTipText(tooltip);
+                tooltip.append("</html>");
+                label.setToolTipText(tooltip.toString());
                 continue;
             }
 
@@ -543,12 +733,15 @@ public class BossLogPanel extends PluginPanel
             // No clog data for this boss
             if ((obtained == null || obtained.isEmpty()) && (allItems == null || allItems.isEmpty()))
             {
-                String tooltip = bossName;
+                StringBuilder tooltip = new StringBuilder("<html>");
+                tooltip.append(escapeHtml(bossName));
+                tooltip.append(formatRankHtml(rank));
                 if (kc > 0)
                 {
-                    tooltip += " \u2014 " + kc + " kc";
+                    tooltip.append(" \u2014 ").append(kc).append(" kc");
                 }
-                label.setToolTipText(tooltip);
+                tooltip.append("</html>");
+                label.setToolTipText(tooltip.toString());
                 continue;
             }
 
@@ -594,6 +787,9 @@ public class BossLogPanel extends PluginPanel
             html.append(escapeHtml(bossName));
             html.append(" (").append(obtainedCount).append("/").append(totalItems).append(")");
             html.append("</b>");
+
+            // Rank after boss name
+            html.append(formatRankHtml(rank));
 
             if (kc > 0)
             {
