@@ -86,6 +86,7 @@ public class BossLogPlugin extends Plugin
     protected void shutDown()
     {
         clientToolbar.removeNavigation(navButton);
+        SwingUtilities.invokeLater(() -> panel.shutdown());
         log.info("420 kc plugin stopped");
     }
 
@@ -142,7 +143,7 @@ public class BossLogPlugin extends Plugin
 
     private void addLookupMenuEntry(MenuEntry[] existing, String playerName)
     {
-        client.createMenuEntry(1)
+        client.getMenu().createMenuEntry(1)
             .setOption("<col=00ff00>420 kc</col> Lookup")
             .setTarget("<col=ffffff>" + playerName + "</col>")
             .setType(MenuAction.RUNELITE)

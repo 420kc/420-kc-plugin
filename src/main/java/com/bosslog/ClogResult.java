@@ -1,8 +1,8 @@
 package com.bosslog;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Parsed collection log data for a player from TempleOSRS.
@@ -13,8 +13,8 @@ public class ClogResult
     private final Map<String, List<ClogItem>> obtainedItems;
     /** category key -> all item IDs in that category */
     private final Map<String, List<Integer>> categoryItems;
-    /** item ID -> display name */
-    private final Map<Integer, String> itemNames;
+    /** item ID -> display name (concurrent: written from client thread, read from EDT) */
+    private final ConcurrentHashMap<Integer, String> itemNames;
 
     public ClogResult(
         Map<String, List<ClogItem>> obtainedItems,
@@ -23,7 +23,7 @@ public class ClogResult
     {
         this.obtainedItems = obtainedItems;
         this.categoryItems = categoryItems;
-        this.itemNames = itemNames;
+        this.itemNames = new ConcurrentHashMap<>(itemNames);
     }
 
     public Map<String, List<ClogItem>> getObtainedItems()

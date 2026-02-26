@@ -25,16 +25,6 @@ public interface BossLogConfig extends Config
     }
 
     @ConfigItem(
-        keyName = "showAccountType",
-        name = "Show Account Type",
-        description = "Detect and display account type (Iron, HCIM, UIM)"
-    )
-    default boolean showAccountType()
-    {
-        return true;
-    }
-
-    @ConfigItem(
         keyName = "showCollectionLog",
         name = "Show Collection Log",
         description = "Fetch collection log from TempleOSRS and show in tooltips"

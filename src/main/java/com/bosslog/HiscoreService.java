@@ -2,6 +2,7 @@ package com.bosslog;
 
 import java.io.IOException;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -69,15 +70,7 @@ public class HiscoreService
      */
     public CompletableFuture<HiscoreResult> lookup(String playerName)
     {
-        String encoded;
-        try
-        {
-            encoded = URLEncoder.encode(playerName, "UTF-8");
-        }
-        catch (Exception e)
-        {
-            return CompletableFuture.failedFuture(new RuntimeException("Failed to encode player name"));
-        }
+        String encoded = URLEncoder.encode(playerName, StandardCharsets.UTF_8);
 
         CompletableFuture<String> uimFuture = fetchAsync("hiscore_oldschool_ultimate", encoded);
         CompletableFuture<String> hcimFuture = fetchAsync("hiscore_oldschool_hardcore_ironman", encoded);
@@ -218,7 +211,7 @@ public class HiscoreService
 
         Request request = new Request.Builder()
             .url(BASE_URL + hiscoreKey + SUFFIX + encodedPlayer)
-            .header("User-Agent", "420kc-RuneLite-Plugin/1.0")
+            .header("User-Agent", "420kc-RuneLite-Plugin/1.0 (https://github.com/420kc/420-kc-plugin)")
             .build();
 
         httpClient.newCall(request).enqueue(new Callback()

@@ -149,6 +149,9 @@ public class BossLogPanel extends PluginPanel
     private HiscoreResult hiscoreResult;
     private ClogResult clogResult;
 
+    // Original tooltip dismiss delay to restore on shutdown
+    private final int originalDismissDelay;
+
     @Inject
     public BossLogPanel(HiscoreService hiscoreService, ClogService clogService,
                         BossLogConfig config, ConfigManager configManager,
@@ -165,6 +168,7 @@ public class BossLogPanel extends PluginPanel
         this.clientThread = clientThread;
 
         // Keep tooltips visible longer for reading item lists
+        originalDismissDelay = ToolTipManager.sharedInstance().getDismissDelay();
         ToolTipManager.sharedInstance().setDismissDelay(15000);
 
         setLayout(new BorderLayout());
@@ -316,6 +320,10 @@ public class BossLogPanel extends PluginPanel
         spriteManager.getSpriteAsync(boss.getSpriteId(), 0, sprite ->
             SwingUtilities.invokeLater(() ->
             {
+                if (sprite == null)
+                {
+                    return;
+                }
                 BufferedImage scaled = ImageUtil.resizeImage(
                     ImageUtil.resizeCanvas(sprite, 25, 25), 20, 20);
                 ImageIcon icon = new ImageIcon(scaled);
@@ -844,6 +852,14 @@ public class BossLogPanel extends PluginPanel
             html.append("</body></html>");
             label.setToolTipText(html.toString());
         }
+    }
+
+    /**
+     * Restore global state modified by this panel.
+     */
+    public void shutdown()
+    {
+        ToolTipManager.sharedInstance().setDismissDelay(originalDismissDelay);
     }
 
     private static String escapeHtml(String text)

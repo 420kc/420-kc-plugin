@@ -8,6 +8,7 @@ import com.google.gson.reflect.TypeToken;
 import java.io.IOException;
 import java.lang.reflect.Type;
 import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -111,15 +112,7 @@ public class ClogService
      */
     public CompletableFuture<ClogResult> lookup(String playerName)
     {
-        String encoded;
-        try
-        {
-            encoded = URLEncoder.encode(playerName, "UTF-8");
-        }
-        catch (Exception e)
-        {
-            return CompletableFuture.failedFuture(new RuntimeException("Failed to encode player name"));
-        }
+        String encoded = URLEncoder.encode(playerName, StandardCharsets.UTF_8);
 
         CompletableFuture<Map<String, List<ClogResult.ClogItem>>> playerFuture =
             fetchPlayerClog(encoded);
@@ -287,7 +280,7 @@ public class ClogService
 
         Request request = new Request.Builder()
             .url(url)
-            .header("User-Agent", "420kc-RuneLite-Plugin/1.0")
+            .header("User-Agent", "420kc-RuneLite-Plugin/1.0 (https://github.com/420kc/420-kc-plugin)")
             .build();
 
         httpClient.newCall(request).enqueue(new Callback()
