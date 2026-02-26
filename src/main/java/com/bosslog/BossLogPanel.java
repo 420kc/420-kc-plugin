@@ -137,6 +137,7 @@ public class BossLogPanel extends PluginPanel
     private final JButton lookupButton = new JButton("\uD83D\uDD0D");
     private final JButton toggleButton = new JButton();
     private final JLabel statusLabel = new JLabel(" ");
+    private final JLabel clogNotice = new JLabel();
     private final JPanel resultsPanel = new JPanel();
 
     // Track labels for updating after lookup
@@ -201,7 +202,9 @@ public class BossLogPanel extends PluginPanel
         JPanel searchRow = new JPanel(new BorderLayout(5, 0));
         searchRow.setBackground(ColorScheme.DARK_GRAY_COLOR);
 
-        accountIcon.setVisible(false);
+        // Always reserve space for account icon so search bar width doesn't shift on lookup
+        accountIcon.setPreferredSize(new java.awt.Dimension(15, 15));
+        accountIcon.setIcon(null);
         searchRow.add(accountIcon, BorderLayout.WEST);
 
         // Dark search bar
@@ -250,6 +253,13 @@ public class BossLogPanel extends PluginPanel
         statusLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
         panel.add(statusLabel);
 
+        // Collection log sync notice (hidden by default)
+        clogNotice.setFont(FontManager.getRunescapeSmallFont());
+        clogNotice.setForeground(new Color(180, 180, 100));
+        clogNotice.setAlignmentX(Component.CENTER_ALIGNMENT);
+        clogNotice.setVisible(false);
+        panel.add(clogNotice);
+
         return panel;
     }
 
@@ -290,7 +300,7 @@ public class BossLogPanel extends PluginPanel
                 break;
             case ON:
                 toggleButton.setForeground(GOLD);
-                toggleButton.setBorder(BorderFactory.createLineBorder(Color.WHITE, 2));
+                toggleButton.setBorder(BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR, 2));
                 break;
             case CAP:
                 toggleButton.setForeground(GOLD);
@@ -377,6 +387,19 @@ public class BossLogPanel extends PluginPanel
         return StringUtils.leftPad(text, 4);
     }
 
+    private static String formatKc(int kc)
+    {
+        if (kc >= 1_000_000)
+        {
+            return kc / 1_000_000 + "m";
+        }
+        if (kc >= 10_000)
+        {
+            return kc / 1_000 + "k";
+        }
+        return String.valueOf(kc);
+    }
+
     public void setPlayerName(String name)
     {
         playerInput.setText(name);
@@ -397,11 +420,12 @@ public class BossLogPanel extends PluginPanel
         statusLabel.setText("Looking up " + player + "...");
         statusLabel.setForeground(TEXT_DIM);
         lookupButton.setEnabled(false);
-        accountIcon.setVisible(false);
+        accountIcon.setIcon(null); accountIcon.setToolTipText(null);
 
         // Clear previous results
         hiscoreResult = null;
         clogResult = null;
+        clogNotice.setVisible(false);
 
         // Reset all labels to "--" and restore original icons
         for (Map.Entry<HiscoreSkill, JLabel> entry : bossLabels.entrySet())
@@ -460,10 +484,15 @@ public class BossLogPanel extends PluginPanel
                     if (thisLookup != lookupVersion) return; // stale result
                     clogResult = result;
                     updateTooltips();
-                    // Resolve untradeable item names via game cache on client thread
                     if (result != null)
                     {
+                        // Resolve untradeable item names via game cache on client thread
                         resolveUntradeableNames(result);
+                    }
+                    else
+                    {
+                        clogNotice.setText("No collection log \u2014 sync at templeosrs.com");
+                        clogNotice.setVisible(true);
                     }
                 })
             ).exceptionally(ex ->
@@ -490,7 +519,7 @@ public class BossLogPanel extends PluginPanel
                 resource = "ultimate_ironman.png";
                 break;
             default:
-                accountIcon.setVisible(false);
+                accountIcon.setIcon(null); accountIcon.setToolTipText(null);
                 return;
         }
 
@@ -499,11 +528,11 @@ public class BossLogPanel extends PluginPanel
             BufferedImage img = ImageUtil.loadImageResource(HiscorePanel.class, resource);
             accountIcon.setIcon(new ImageIcon(ImageUtil.resizeImage(img, 15, 15)));
             accountIcon.setToolTipText(type.getLabel());
-            accountIcon.setVisible(true);
+            /* icon already set above */;
         }
         catch (Exception e)
         {
-            accountIcon.setVisible(false);
+            accountIcon.setIcon(null); accountIcon.setToolTipText(null);
         }
     }
 
@@ -605,7 +634,7 @@ public class BossLogPanel extends PluginPanel
             }
             else
             {
-                kcText = kc <= 0 ? "--" : String.valueOf(kc);
+                kcText = kc <= 0 ? "--" : formatKc(kc);
             }
             label.setText(pad(kcText));
 

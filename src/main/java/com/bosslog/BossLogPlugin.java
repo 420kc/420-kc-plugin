@@ -113,6 +113,10 @@ public class BossLogPlugin extends Plugin
     @Subscribe
     public void onMenuOpened(MenuOpened event)
     {
+        if (!config.playerMenuLookup())
+        {
+            return;
+        }
         MenuEntry[] entries = event.getMenuEntries();
         for (MenuEntry entry : entries)
         {
@@ -161,7 +165,7 @@ public class BossLogPlugin extends Plugin
     @Subscribe
     public void onChatMessage(ChatMessage event)
     {
-        if (event.getType() != ChatMessageType.GAMEMESSAGE)
+        if (!config.chatMessages() || event.getType() != ChatMessageType.GAMEMESSAGE)
         {
             return;
         }
